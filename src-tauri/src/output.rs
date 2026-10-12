@@ -449,7 +449,7 @@ mod tests {
     fn adalight_header() {
         let p = adalight(&[1, 2, 3, 4, 5, 6]);
         // Two LEDs -> count field is 1.
-        assert_eq!(&p[..6], &[b'A', b'd', b'a', 0, 1, 0 ^ 1 ^ 0x55]);
+        assert_eq!(&p[..6], &[b'A', b'd', b'a', 0, 1, 0x54]); // checksum = 0 ^ 1 ^ 0x55
         assert_eq!(&p[6..], &[1, 2, 3, 4, 5, 6]);
 
         let big = adalight(&vec![0; 300 * 3]);

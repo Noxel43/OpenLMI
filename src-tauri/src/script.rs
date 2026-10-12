@@ -86,7 +86,7 @@ fn build_engine(shared: &Rc<RefCell<Shared>>) -> Engine {
     e.register_fn("noise", |x: Dynamic, y: Dynamic, z: Dynamic| -> Fallible<FLOAT> {
         Ok(color::noise01(num(&x)? as f32, num(&y)? as f32, num(&z)? as f32) as FLOAT)
     });
-    e.register_fn("rand", || fastrand::f64());
+    e.register_fn("rand", fastrand::f64);
     e.register_fn("rand_int", |lo: INT, hi: INT| if hi > lo { fastrand::i64(lo..=hi) } else { lo });
     e.register_fn("wave", |x: Dynamic| -> Fallible<FLOAT> { Ok(0.5 + 0.5 * (num(&x)? * std::f64::consts::TAU).sin()) });
     e.register_fn("tri", |x: Dynamic| -> Fallible<FLOAT> {

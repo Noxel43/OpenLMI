@@ -257,9 +257,7 @@ mod tests {
                 bottom_gap: 0.2,
             },
         ];
-        let mut audio = AudioFrame::default();
-        audio.level = 0.7;
-        audio.beat = 1.0;
+        let mut audio = AudioFrame { level: 0.7, beat: 1.0, ..Default::default() };
         for (i, b) in audio.bands.iter_mut().enumerate() {
             *b = (i as f32 / 32.0).sin().abs();
         }
@@ -294,11 +292,7 @@ mod tests {
     #[test]
     fn most_effects_light_something() {
         let map = layout::build(&Layout::Matrix { width: 16, height: 16, wiring: MatrixWiring::default() });
-        let mut audio = AudioFrame::default();
-        audio.level = 0.8;
-        audio.beat = 1.0;
-        audio.bass = 0.8;
-        audio.bands = [0.7; 32];
+        let audio = AudioFrame { level: 0.8, beat: 1.0, bass: 0.8, bands: [0.7; 32], ..Default::default() };
         for def in registry() {
             let bag = ParamBag::build(&def.params, &Params::new());
             let mut fx = (def.make)();

@@ -431,7 +431,7 @@ mod tests {
                         height: 4,
                         wiring: MatrixWiring { start, direction: dir, serpentine: serp },
                     });
-                    let mut seen = vec![false; 20];
+                    let mut seen = [false; 20];
                     for (x, y) in cells(&m) {
                         let i = x as usize + y as usize * 5;
                         assert!(!seen[i], "cell visited twice");

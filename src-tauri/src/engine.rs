@@ -221,6 +221,8 @@ fn resample(src: &[Rgb], n: usize) -> Vec<Rgb> {
     (0..n).map(|i| src[(i * src.len() / n.max(1)).min(src.len() - 1)]).collect()
 }
 
+// One per device, so the size difference between variants is not worth boxing.
+#[allow(clippy::large_enum_variant)]
 enum Renderer {
     Blank,
     Effect { def: &'static EffectDef, fx: Box<dyn Effect>, bag: ParamBag },

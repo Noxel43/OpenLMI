@@ -95,9 +95,9 @@ function WiringFields({ wiring, onChange }: { wiring: MatrixWiring; onChange: (w
 }
 
 function LayoutFields({ layout, onChange }: { layout: Layout; onChange: (l: Layout) => void }) {
-  const count = (label: string, value: number, set: (v: number) => void, max = 4096) => (
+  const count = (label: string, value: number, set: (v: number) => void, max: number) => (
     <Field label={label} row>
-      <NumberInput value={value} min={label === "LEDs" ? 1 : 0} max={max} onChange={(v) => set(Math.round(v))} />
+      <NumberInput value={value} min={1} max={max} onChange={(v) => set(Math.max(1, Math.round(v)))} />
     </Field>
   );
 
@@ -105,7 +105,7 @@ function LayoutFields({ layout, onChange }: { layout: Layout; onChange: (l: Layo
     case "strip":
       return (
         <>
-          {count("LEDs", layout.count, (v) => onChange({ ...layout, count: Math.max(1, v) }), 16384)}
+          {count("LEDs", layout.count, (count) => onChange({ ...layout, count }), 16384)}
           <Toggle label="Reversed" hint="The controller is connected to the far end of the strip." checked={layout.reversed} onChange={(reversed) => onChange({ ...layout, reversed })} />
         </>
       );
@@ -113,8 +113,8 @@ function LayoutFields({ layout, onChange }: { layout: Layout; onChange: (l: Layo
       return (
         <>
           <div className="field-pair">
-            {count("Width", layout.width, (v) => onChange({ ...layout, width: Math.max(1, v) }), 256)}
-            {count("Height", layout.height, (v) => onChange({ ...layout, height: Math.max(1, v) }), 256)}
+            {count("Width", layout.width, (width) => onChange({ ...layout, width }), 256)}
+            {count("Height", layout.height, (height) => onChange({ ...layout, height }), 256)}
           </div>
           <WiringFields wiring={layout.wiring} onChange={(wiring) => onChange({ ...layout, wiring })} />
         </>
@@ -123,9 +123,9 @@ function LayoutFields({ layout, onChange }: { layout: Layout; onChange: (l: Layo
       return (
         <>
           <div className="field-pair field-pair--3">
-            {count("Width", layout.width, (v) => onChange({ ...layout, width: Math.max(1, v) }), 32)}
-            {count("Height", layout.height, (v) => onChange({ ...layout, height: Math.max(1, v) }), 32)}
-            {count("Depth", layout.depth, (v) => onChange({ ...layout, depth: Math.max(1, v) }), 32)}
+            {count("Width", layout.width, (width) => onChange({ ...layout, width }), 32)}
+            {count("Height", layout.height, (height) => onChange({ ...layout, height }), 32)}
+            {count("Depth", layout.depth, (depth) => onChange({ ...layout, depth }), 32)}
           </div>
           <Field label="Layers are stacked">
             <Select
@@ -152,7 +152,7 @@ function LayoutFields({ layout, onChange }: { layout: Layout; onChange: (l: Layo
     case "ring":
       return (
         <>
-          {count("LEDs", layout.count, (v) => onChange({ ...layout, count: Math.max(1, v) }), 4096)}
+          {count("LEDs", layout.count, (count) => onChange({ ...layout, count }), 4096)}
           <Slider label="First LED position" min={0} max={359} step={1} value={layout.startAngle} format={(v) => `${v} deg`} hint="Clockwise from the top." onChange={(startAngle) => onChange({ ...layout, startAngle })} />
           <Field label="LED numbers increase">
             <Segmented
@@ -485,6 +485,7 @@ export function DeviceEditor({ deviceId }: { deviceId: string | null }) {
                 ))}
               </div>
               <LayoutFields layout={draft.layout} onChange={(layout) => change({ ...draft, layout })} />
+              {total > 16384 && <Notice kind="warn">A device can have up to 16,384 LEDs. Anything beyond that is ignored.</Notice>}
             </>
           )}
 
