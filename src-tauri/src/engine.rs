@@ -286,7 +286,7 @@ impl Rt {
             milliamps: 0,
             limited: false,
         };
-        rt.rebuild_renderer(lib);
+        rt.rebuild_renderer(lib, false);
         rt
     }
 
@@ -321,11 +321,13 @@ impl Rt {
                 _ => false,
             };
         if !keep {
-            self.rebuild_renderer(lib);
+            self.rebuild_renderer(lib, !layout_changed);
         }
     }
 
-    fn rebuild_renderer(&mut self, lib: &Library) {
+    /// `keep_script`: a script that fails to compile may fall back to the
+    /// previous working version (only valid while the layout is unchanged).
+    fn rebuild_renderer(&mut self, lib: &Library, keep_script: bool) {
         self.note = None;
         self.renderer = match &self.cfg.source {
             Source::Effect { effect, params } => match effects::find(effect) {
@@ -345,14 +347,23 @@ impl Rt {
             Source::Ambient(_) => Renderer::Ambient(AmbientState::default()),
             Source::Script { script_id } => match lib.scripts.iter().find(|s| s.id == *script_id) {
                 Some(src) => {
+                    // While someone is typing, a half-written script should not
+                    // blank the LEDs: keep running the last version that worked.
+                    let previous = match std::mem::replace(&mut self.renderer, Renderer::Blank) {
+                        Renderer::Script { source, runner: Some(r) }
+                            if keep_script && source.id == src.id && r.error.is_none() =>
+                        {
+                            Some(r)
+                        }
+                        _ => None,
+                    };
                     let runner = match ScriptRunner::new(&src.code, self.map.clone()) {
                         Ok(r) => Some(r),
                         Err(e) => {
                             self.note = Some(format!("Script error: {e}"));
-                            None
+                            previous
                         }
                     };
-                    self.clock = 0.0;
                     Renderer::Script { source: src.clone(), runner }
                 }
                 None => {
@@ -864,6 +875,30 @@ mod tests {
         rt.paint = Some(vec![Rgb::new(0.0, 0.0, 1.0); 4]);
         run(&mut rt, 60);
         assert_eq!(&rt.preview[..3], &[0, 0, 255]);
+    }
+
+    #[test]
+    fn a_broken_edit_keeps_the_last_working_script_running() {
+        let script = |code: &str| Script { id: "s".into(), name: "Live".into(), code: code.into() };
+        let good = Library { animations: vec![], scripts: vec![script("fn pixel(i, t) { rgb(0, 255, 0) }")] };
+        let dev = device(Source::Script { script_id: "s".into() });
+        let mut rt = Rt::new(&dev, &good);
+        run(&mut rt, 30);
+        assert_eq!(&rt.preview[..3], &[0, 255, 0]);
+
+        // Mid-edit: unbalanced brace. The LEDs stay green and the error shows.
+        let broken = Library { animations: vec![], scripts: vec![script("fn pixel(i, t) { rgb(0, 0, 255 }")] };
+        rt.sync(&dev, &broken);
+        run(&mut rt, 2);
+        assert_eq!(&rt.preview[..3], &[0, 255, 0]);
+        assert!(rt.note.as_deref().unwrap().starts_with("Script error"));
+
+        // Fixed: the new version takes over and the error clears.
+        let fixed = Library { animations: vec![], scripts: vec![script("fn pixel(i, t) { rgb(0, 0, 255) }")] };
+        rt.sync(&dev, &fixed);
+        run(&mut rt, 2);
+        assert_eq!(&rt.preview[..3], &[0, 0, 255]);
+        assert_eq!(rt.note, None);
     }
 
     #[test]
