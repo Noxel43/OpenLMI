@@ -12,6 +12,7 @@ import {
   ImagePlus,
   PaintBucket,
   Pipette,
+  Smile,
   Play,
   Plus,
   Square,
@@ -21,12 +22,14 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import { useApp } from "../store";
-import type { Animation, Device, LayoutPreview } from "../types";
-import { base64ToBytes, bytesToBase64, clamp, frameThrottle, hexToRgb, rgbToHex, samplePalette, type RGB } from "../util";
+import type { Animation, Device, IconInfo, LayoutPreview } from "../types";
+import { base64ToBytes, bytesToBase64, frameThrottle, hexToRgb, rgbToHex, samplePalette, type RGB } from "../util";
 import { FrameThumb, resamplePixels } from "./frames";
+import { IconPicker, iconColourAt } from "./icons";
+import { importImages, MAX_FRAMES } from "./imageImport";
 import { ColorPicker, PaletteField } from "./ColorPicker";
 import { LedCanvas, type PaintPhase } from "./LedCanvas";
-import { Button, Field, NumberInput, Segmented, Slider, Toggle } from "./ui";
+import { Button, Field, NumberInput, Popover, Segmented, Slider, Toggle } from "./ui";
 
 interface EditFrame {
   durationMs: number;
@@ -35,8 +38,6 @@ interface EditFrame {
 }
 
 type Tool = "brush" | "eraser" | "picker";
-
-const MAX_FRAMES = 400;
 
 function decode(animation: Animation, count: number): EditFrame[] {
   const frames = animation.frames.map((f) => ({
@@ -76,6 +77,8 @@ export function AnimationEditor({ device, layout, animation, onClose }: Props) {
   const undoStack = useRef<{ frames: EditFrame[]; cur: number }[]>([]);
   const dirty = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const iconButton = useRef<HTMLDivElement>(null);
+  const [iconOpen, setIconOpen] = useState(false);
 
   const index = Math.min(cur, frames.length - 1);
   const frame = frames[index];
@@ -292,69 +295,42 @@ export function AnimationEditor({ device, layout, animation, onClose }: Props) {
 
   const setFrameProp = (patch: Partial<EditFrame>) => editFrames((fs) => fs.map((f, i) => (i === index ? { ...f, ...patch } : f)));
 
-  // --- image and GIF import (matrices) -----------------------------------------
+  // --- pictures and icons ---------------------------------------------------------
 
-  const importFile = async (file: File) => {
-    const [w, h] = layout.dims;
-    const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
-    const toPixels = (source: CanvasImageSource, sw: number, sh: number) => {
-      ctx.fillStyle = "#000";
-      ctx.fillRect(0, 0, w, h);
-      // Pixel art that is an exact multiple of the matrix stays crisp.
-      const exact = sw % w === 0 && sh % h === 0 && sw / w === sh / h;
-      ctx.imageSmoothingEnabled = !exact;
-      ctx.imageSmoothingQuality = "high";
-      const k = Math.min(w / sw, h / sh);
-      ctx.drawImage(source, (w - sw * k) / 2, (h - sh * k) / 2, sw * k, sh * k);
-      const data = ctx.getImageData(0, 0, w, h).data;
-      const px = new Uint8Array(n * 3);
-      layout.grid.forEach((g, i) => {
-        const o = (g[0] + g[1] * w) * 4;
-        px.set([data[o], data[o + 1], data[o + 2]], i * 3);
-      });
-      return px;
-    };
-
+  const importFiles = async (files: File[]) => {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const Decoder = (window as any).ImageDecoder;
-      if (file.type === "image/gif" && Decoder) {
-        const decoder = new Decoder({ data: await file.arrayBuffer(), type: file.type });
-        // The frame count is only final once the whole file has been parsed.
-        await decoder.completed;
-        await decoder.tracks.ready;
-        const total = Math.min(decoder.tracks.selectedTrack.frameCount, 240);
-        const imported: EditFrame[] = [];
-        for (let i = 0; i < total; i++) {
-          const { image } = await decoder.decode({ frameIndex: i });
-          imported.push({
-            durationMs: clamp(Math.round((image.duration ?? 100_000) / 1000), 20, 60_000),
-            fade: false,
-            px: toPixels(image, image.displayWidth, image.displayHeight),
-          });
-          image.close();
-        }
-        const blank = frames.length === 1 && frames[0].px.every((v) => v === 0);
-        if (blank) {
-          remember();
-          editFrames(() => imported.slice(0, MAX_FRAMES));
-          setCur(0);
-        } else {
-          insertAfterCurrent(imported);
-        }
-        toast(`Imported ${imported.length} frames`, "success");
-      } else {
-        const bitmap = await createImageBitmap(file);
-        const px = toPixels(bitmap, bitmap.width, bitmap.height);
+      const imported: EditFrame[] = (await importImages(files, layout, MAX_FRAMES)).map((f) => ({ ...f, fade: false }));
+      if (imported.length === 0) return;
+      const blank = frames.length === 1 && frames[0].px.every((v) => v === 0);
+      if (imported.length === 1) {
+        // A single picture replaces what is on the current frame.
         remember();
-        editPixels((target) => target.set(px));
+        editPixels((target) => target.set(imported[0].px));
+      } else if (blank) {
+        remember();
+        editFrames(() => imported);
+        setCur(0);
+      } else {
+        insertAfterCurrent(imported);
       }
+      if (imported.length > 1) toast(`Imported ${imported.length} frames`, "success");
     } catch (e) {
       toast(`Could not read that image: ${e}`, "error");
     }
+  };
+
+  /** Draws an icon over the current frame (or cube slice), leaving the rest alone. */
+  const stampIcon = (icon: IconInfo) => {
+    const [w, h] = layout.dims;
+    remember();
+    editPixels((px) => {
+      layout.grid.forEach((g, i) => {
+        if (slice && g[2] !== layer) return;
+        const c = iconColourAt(icon, w, h, g[0], g[1]);
+        if (c) px.set(c, i * 3);
+      });
+    });
+    setIconOpen(false);
   };
 
   // --- keyboard ---------------------------------------------------------------
@@ -479,20 +455,42 @@ export function AnimationEditor({ device, layout, animation, onClose }: Props) {
             </div>
           </Field>
 
-          {isMatrix && (
+          {layout.isGrid && (
+            <div ref={iconButton}>
+              <Button size="sm" icon={<Smile size={14} />} onClick={() => setIconOpen((o) => !o)} title="Draw a built-in icon onto this frame">
+                Add an icon
+              </Button>
+              {iconOpen && (
+                <Popover anchor={iconButton} onClose={() => setIconOpen(false)} width={292}>
+                  <IconPicker onPick={stampIcon} />
+                </Popover>
+              )}
+            </div>
+          )}
+          {(isMatrix || !layout.isGrid) && (
             <>
-              <Button size="sm" icon={<ImagePlus size={14} />} onClick={() => fileInput.current?.click()}>
-                Import image or GIF
+              <Button
+                size="sm"
+                icon={<ImagePlus size={14} />}
+                onClick={() => fileInput.current?.click()}
+                title={
+                  isMatrix
+                    ? "A picture fills this frame; a GIF or several pictures become frames"
+                    : "Every row of the picture becomes one step of the animation"
+                }
+              >
+                {isMatrix ? "Import images or GIF" : "Import image as steps"}
               </Button>
               <input
                 ref={fileInput}
                 type="file"
                 accept="image/*"
+                multiple
                 hidden
                 onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) void importFile(file);
+                  const files = [...(e.target.files ?? [])];
                   e.target.value = "";
+                  if (files.length) void importFiles(files);
                 }}
               />
             </>

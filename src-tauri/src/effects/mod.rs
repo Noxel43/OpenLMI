@@ -3,6 +3,7 @@
 
 mod audio_fx;
 mod font;
+pub mod icons;
 mod library;
 
 use crate::audio::AudioFrame;
@@ -57,6 +58,8 @@ pub enum ParamKind {
     Toggle { default: bool },
     Select { options: &'static [&'static str], default: &'static str },
     Text { default: &'static str },
+    /// The name of an icon from the built-in library.
+    Icon { default: &'static str },
 }
 
 pub fn slider(key: &'static str, label: &'static str, min: f32, max: f32, step: f32, default: f32) -> ParamDef {
@@ -138,7 +141,7 @@ impl ParamBag {
                     };
                     bag.texts.insert(def.key, v);
                 }
-                ParamKind::Text { default } => {
+                ParamKind::Text { default } | ParamKind::Icon { default } => {
                     let v = match given {
                         Some(ParamValue::Text(s)) => s.clone(),
                         _ => default.to_string(),
@@ -197,6 +200,7 @@ pub fn registry() -> &'static [EffectDef] {
     static REG: OnceLock<Vec<EffectDef>> = OnceLock::new();
     REG.get_or_init(|| {
         let mut all = library::effects();
+        all.push(icons::effect());
         all.extend(audio_fx::effects());
         all
     })

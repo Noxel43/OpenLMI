@@ -3,6 +3,7 @@
 use crate::ambient::{self, MonitorInfo};
 use crate::audio::{self, AudioDeviceInfo};
 use crate::color::PALETTES;
+use crate::effects::icons::{self, IconInfo};
 use crate::effects::{self, EffectInfo};
 use crate::engine::{AudioSnapshot, DeviceStatus, Identify};
 use crate::firmware::{self, FirmwareOpts};
@@ -39,6 +40,7 @@ pub struct Bootstrap {
     config: Config,
     effects: Vec<EffectInfo>,
     palettes: Vec<PaletteInfo>,
+    icons: Vec<IconInfo>,
     script_examples: Vec<ScriptExample>,
     version: &'static str,
     config_path: String,
@@ -50,6 +52,7 @@ pub fn bootstrap(state: State<AppState>) -> Bootstrap {
         config: state.config.lock().clone(),
         effects: effects::infos(),
         palettes: PALETTES.iter().map(|(name, colors)| PaletteInfo { name, colors }).collect(),
+        icons: icons::infos(),
         script_examples: script::EXAMPLES.iter().map(|(name, code)| ScriptExample { name, code }).collect(),
         version: env!("CARGO_PKG_VERSION"),
         config_path: state.saver.path.display().to_string(),

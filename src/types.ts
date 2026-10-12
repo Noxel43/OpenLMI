@@ -146,6 +146,7 @@ export type ParamDef = { key: string; label: string } & (
   | { kind: "toggle"; default: boolean }
   | { kind: "select"; options: string[]; default: string }
   | { kind: "text"; default: string }
+  | { kind: "icon"; default: string }
 );
 
 export interface EffectInfo {
@@ -163,6 +164,14 @@ export interface PaletteInfo {
   colors: string[];
 }
 
+/** A built-in 8x8 pixel-art icon. */
+export interface IconInfo {
+  name: string;
+  group: string;
+  /** 64 hex colours, row by row; an empty string is an unlit pixel. */
+  pixels: string[];
+}
+
 export interface ScriptExample {
   name: string;
   code: string;
@@ -172,6 +181,7 @@ export interface Bootstrap {
   config: Config;
   effects: EffectInfo[];
   palettes: PaletteInfo[];
+  icons: IconInfo[];
   scriptExamples: ScriptExample[];
   version: string;
   configPath: string;

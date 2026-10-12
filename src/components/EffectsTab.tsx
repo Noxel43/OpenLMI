@@ -19,6 +19,7 @@ import {
   ScanLine,
   Shuffle,
   Siren,
+  Smile,
   Sparkle,
   Sparkles,
   Star,
@@ -33,6 +34,7 @@ import { defaultParams, isGridLayout, useApp } from "../store";
 import type { Device, EffectInfo, ParamDef, ParamValue, Params } from "../types";
 import { gradientCss } from "../util";
 import { ColorField, PaletteField } from "./ColorPicker";
+import { IconPicker } from "./icons";
 import { Button, Empty, Field, Select, Slider, TextInput, Toggle } from "./ui";
 
 const ICONS: Record<string, ReactNode> = {
@@ -63,6 +65,7 @@ const ICONS: Record<string, ReactNode> = {
   police: <Siren size={20} />,
   strobe: <Zap size={20} />,
   text: <Type size={20} />,
+  icon: <Smile size={20} />,
   spectrum: <AudioLines size={20} />,
   vu: <Gauge size={20} />,
   beat: <Heart size={20} />,
@@ -74,9 +77,8 @@ const ICONS: Record<string, ReactNode> = {
 function cardColors(effect: EffectInfo, paletteColors: (name: string) => string[]): string[] {
   const pal = effect.params.find((p) => p.kind === "palette");
   if (pal && pal.kind === "palette") return paletteColors(pal.default);
-  const colors = effect.params.flatMap((p) => (p.kind === "color" ? [p.default] : []));
-  if (colors.length) return colors.filter((c) => c !== "#000000");
-  return paletteColors("Rainbow");
+  const colors = effect.params.flatMap((p) => (p.kind === "color" && p.default !== "#000000" ? [p.default] : []));
+  return colors.length ? colors : paletteColors("Rainbow");
 }
 
 function ParamControl({ def, value, onChange }: { def: ParamDef; value: ParamValue | undefined; onChange: (v: ParamValue) => void }) {
@@ -117,6 +119,12 @@ function ParamControl({ def, value, onChange }: { def: ParamDef; value: ParamVal
       return (
         <Field label={def.label}>
           <TextInput value={typeof value === "string" ? value : def.default} onChange={onChange} />
+        </Field>
+      );
+    case "icon":
+      return (
+        <Field label={def.label}>
+          <IconPicker value={typeof value === "string" ? value : def.default} onPick={(icon) => onChange(icon.name)} />
         </Field>
       );
   }

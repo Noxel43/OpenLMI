@@ -7,6 +7,7 @@ import type {
   Config,
   Device,
   EffectInfo,
+  IconInfo,
   Layout,
   LayoutPreview,
   PaletteInfo,
@@ -60,6 +61,7 @@ interface AppState {
   config: Config;
   effects: EffectInfo[];
   palettes: PaletteInfo[];
+  icons: IconInfo[];
   scriptExamples: ScriptExample[];
   version: string;
   configPath: string;
@@ -124,6 +126,7 @@ export const useApp = create<AppState>((set, get) => ({
   config: EMPTY_CONFIG,
   effects: [],
   palettes: [],
+  icons: [],
   scriptExamples: [],
   version: "",
   configPath: "",
@@ -144,6 +147,7 @@ export const useApp = create<AppState>((set, get) => ({
         config: boot.config,
         effects: boot.effects,
         palettes: boot.palettes,
+        icons: boot.icons,
         scriptExamples: boot.scriptExamples,
         version: boot.version,
         configPath: boot.configPath,

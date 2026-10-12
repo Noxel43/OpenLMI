@@ -1,10 +1,11 @@
-import { Clapperboard, Copy, Download, Pencil, Play, Plus, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Clapperboard, Copy, Download, ImagePlus, Pencil, Play, Plus, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { ledCount, useApp, useLayoutPreview } from "../store";
 import type { Animation, Device } from "../types";
 import { base64ToBytes, bytesToBase64, plural, uid } from "../util";
 import { AnimationEditor } from "./AnimationEditor";
 import { FrameThumb, resamplePixels } from "./frames";
+import { importImages, MAX_FRAMES } from "./imageImport";
 import { Button, Empty, Slider } from "./ui";
 
 function totalSeconds(a: Animation): string {
@@ -19,8 +20,11 @@ export function AnimationsTab({ device, onEditing }: { device: Device; onEditing
   const setSource = useApp((s) => s.setSource);
   const openDialog = useApp((s) => s.openDialog);
   const layout = useLayoutPreview(device.layout);
+  const toast = useApp((s) => s.toast);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
   const count = ledCount(device.layout);
+  const grid = layout?.isGrid ?? false;
 
   const editing = animations.find((a) => a.id === editingId);
   useEffect(() => {
@@ -43,6 +47,50 @@ export function AnimationsTab({ device, onEditing }: { device: Device; onEditing
     setEditingId(animation.id);
   };
 
+  /** Makes an animation out of image files and starts playing it. */
+  const importFiles = async (files: File[]) => {
+    if (!layout || files.length === 0) return;
+    try {
+      const frames = await importImages(files, layout, MAX_FRAMES);
+      if (frames.length === 0) return;
+      const animation: Animation = {
+        id: uid(),
+        name: files[0].name.replace(/\.[^.]+$/, "") || "Imported",
+        count: layout.count,
+        looped: true,
+        frames: frames.map((f) => ({ durationMs: f.durationMs, fade: false, pixels: bytesToBase64(f.px) })),
+      };
+      saveAnimation(animation);
+      setSource(device.id, { type: "animation", animationId: animation.id, speed: 1 });
+      toast(frames.length === 1 ? "Image imported" : `Imported ${frames.length} frames`, "success");
+    } catch (e) {
+      toast(`Could not read that image: ${e}`, "error");
+    }
+  };
+
+  const importHint = grid
+    ? "Pictures are scaled to fit. A GIF, or several images at once, become the frames of one animation."
+    : "Every row of the picture becomes one step of the animation, with its columns spread along the LEDs.";
+  const importButton = (
+    <>
+      <Button icon={<ImagePlus size={16} />} onClick={() => fileInput.current?.click()} title={importHint}>
+        {grid ? "Import images or GIF" : "Import image"}
+      </Button>
+      <input
+        ref={fileInput}
+        type="file"
+        accept="image/*"
+        multiple
+        hidden
+        onChange={(e) => {
+          const files = [...(e.target.files ?? [])];
+          e.target.value = "";
+          void importFiles(files);
+        }}
+      />
+    </>
+  );
+
   if (editing && layout) {
     return <AnimationEditor key={editing.id} device={device} layout={layout} animation={editing} onClose={() => setEditingId(null)} />;
   }
@@ -54,13 +102,16 @@ export function AnimationsTab({ device, onEditing }: { device: Device; onEditing
           icon={<Clapperboard size={30} />}
           title="Make your own animation"
           action={
-            <Button variant="primary" icon={<Plus size={16} />} onClick={create}>
-              New animation
-            </Button>
+            <div className="example-list">
+              <Button variant="primary" icon={<Plus size={16} />} onClick={create}>
+                New animation
+              </Button>
+              {importButton}
+            </div>
           }
         >
           Paint each LED frame by frame, set how long every frame lasts, and choose whether frames cut or fade into each
-          other. On a matrix you can also import images and GIFs.
+          other - or start from a picture. {importHint}
         </Empty>
       </div>
     );
@@ -73,6 +124,7 @@ export function AnimationsTab({ device, onEditing }: { device: Device; onEditing
           <Button variant="primary" icon={<Plus size={16} />} onClick={create}>
             New animation
           </Button>
+          {importButton}
         </div>
         <div className="anim-grid">
           {animations.map((a) => (
