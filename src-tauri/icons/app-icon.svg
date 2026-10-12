@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1a1c2a"/>
+      <stop offset="1" stop-color="#090a10"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8b5cf6"/>
+      <stop offset="0.5" stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#34d399"/>
+    </linearGradient>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="26" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="208" fill="url(#bg)"/>
+  <rect x="78" y="78" width="868" height="868" rx="194" fill="none" stroke="url(#edge)" stroke-width="28"/>
+  <!-- A ring of LEDs sweeping through the colour wheel -->
+  <g filter="url(#glow)">
+    <circle cx="512" cy="248" r="56" fill="#ff4d6d"/>
+    <circle cx="698.7" cy="325.3" r="56" fill="#ff9f43"/>
+    <circle cx="776" cy="512" r="56" fill="#ffd93d"/>
+    <circle cx="698.7" cy="698.7" r="56" fill="#34d399"/>
+    <circle cx="512" cy="776" r="56" fill="#22d3ee"/>
+    <circle cx="325.3" cy="698.7" r="56" fill="#3b82f6"/>
+    <circle cx="248" cy="512" r="56" fill="#8b5cf6"/>
+    <circle cx="325.3" cy="325.3" r="56" fill="#ec4899"/>
+  </g>
+  <circle cx="512" cy="512" r="74" fill="#f8fafc" filter="url(#glow)"/>
+</svg>
