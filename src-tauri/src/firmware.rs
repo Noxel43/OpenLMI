@@ -5,7 +5,9 @@ use crate::model::Animation;
 use base64::Engine as _;
 use serde::Deserialize;
 
-const CHIPSETS: &[&str] = &["WS2812B", "WS2812", "WS2811", "WS2813", "WS2815", "SK6812", "NEOPIXEL", "APA102", "SK9822", "WS2801"];
+// Chipsets whose FastLED template takes (pin, colour order), plus the clocked
+// ones below. NEOPIXEL is deliberately absent: it takes no colour order.
+const CHIPSETS: &[&str] = &["WS2812B", "WS2812", "WS2811", "WS2813", "WS2815", "SK6812", "APA102", "SK9822", "WS2801"];
 const CLOCKED: &[&str] = &["APA102", "SK9822", "WS2801"];
 const ORDERS: &[&str] = &["GRB", "RGB", "BRG", "RBG", "GBR", "BGR"];
 
