@@ -84,6 +84,8 @@ Use the tabs under the preview: **Effects**, **Animations**, **Ambient**, **Audi
 
 ### Monitor backlights and ambient lighting
 
+![A monitor backlight in the live preview](docs/screenshots/backlight.png)
+
 For ambient lighting to put the right colour in the right place, OpenLMI needs to know where each LED is around the screen.
 
 **Everything is described as seen from the front** - sitting at your desk, looking at the screen - even though the strip is stuck to the back.
