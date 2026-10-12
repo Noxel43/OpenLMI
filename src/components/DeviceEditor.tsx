@@ -240,7 +240,9 @@ function ConnectionFields({ value, onChange }: { value: Connection; onChange: (c
   const pick = (type: Connection["type"]) => {
     if (type === value.type) return;
     if (type === "simulator") onChange({ type });
-    if (type === "serial") onChange({ type, port: ports[0]?.name ?? "", baud: 500000, protocol: "adalight" });
+    // The port is left for the user to pick: guessing could send LED data to
+    // some unrelated serial device.
+    if (type === "serial") onChange({ type, port: "", baud: 500000, protocol: "adalight" });
     if (type === "network") onChange({ type, host: "", port: NET_PORTS.ddp, protocol: "ddp", universe: 0 });
   };
 
@@ -366,10 +368,19 @@ export function DeviceEditor({ deviceId }: { deviceId: string | null }) {
   const total = ledCount(draft.layout);
   const isNew = existing == null;
 
-  // Changes to a device that already exists show up on the LEDs immediately.
+  // Changes to a device that already exists show up on the LEDs immediately -
+  // except the connection, which only switches when asked, so half-typed
+  // addresses and ports are never sent anything.
+  const [liveConnection, setLiveConnection] = useState<Connection | null>(existing?.connection ?? null);
+  const link = useApp((s) => (deviceId ? s.status?.devices[deviceId]?.link : undefined));
   const change = (next: Device) => {
     setDraft(next);
-    if (!isNew) updateDevice(next.id, () => next);
+    if (!isNew && liveConnection) updateDevice(next.id, () => ({ ...next, connection: liveConnection }));
+  };
+  const connectionPending = !isNew && JSON.stringify(draft.connection) !== JSON.stringify(liveConnection);
+  const applyConnection = () => {
+    setLiveConnection(draft.connection);
+    updateDevice(draft.id, () => draft);
   };
 
   const runTest = (mode: string | null, index?: number) => {
@@ -391,6 +402,7 @@ export function DeviceEditor({ deviceId }: { deviceId: string | null }) {
   };
   const save = () => {
     if (isNew) addDevice({ ...draft, name: draft.name.trim() || "LEDs" });
+    else updateDevice(draft.id, () => draft);
     close();
   };
 
@@ -476,7 +488,28 @@ export function DeviceEditor({ deviceId }: { deviceId: string | null }) {
             </>
           )}
 
-          {tab === "connection" && <ConnectionFields value={draft.connection} onChange={setConnection} />}
+          {tab === "connection" && (
+            <>
+              <ConnectionFields value={draft.connection} onChange={setConnection} />
+              {!isNew &&
+                (connectionPending ? (
+                  <div className="tool-row">
+                    <Button variant="primary" onClick={applyConnection}>
+                      Connect now
+                    </Button>
+                    <span className="muted small">Or press Done. Nothing is sent to the new connection until then.</span>
+                  </div>
+                ) : (
+                  link && (
+                    <div className="link-status">
+                      <i className={`dot dot--${link.state}`} />
+                      {link.state === "simulator" ? "Simulator: nothing is being sent." : link.message}
+                      {link.fps > 0 ? ` (${Math.round(link.fps)} frames per second)` : ""}
+                    </div>
+                  )
+                ))}
+            </>
+          )}
 
           {tab === "output" && (
             <>

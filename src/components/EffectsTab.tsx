@@ -126,12 +126,12 @@ interface BrowserProps {
   device: Device;
   /** Which effects to list. */
   filter: (e: EffectInfo) => boolean;
-  /** Extra content above the parameter list. */
-  aside?: ReactNode;
+  /** Extra content under the effect cards. */
+  below?: ReactNode;
 }
 
 /** Effect cards on the left, the active effect's controls on the right. */
-export function EffectBrowser({ device, filter, aside }: BrowserProps) {
+export function EffectBrowser({ device, filter, below }: BrowserProps) {
   const effects = useApp((s) => s.effects);
   const palettes = useApp((s) => s.palettes);
   const memory = useApp((s) => s.effectMemory);
@@ -183,10 +183,10 @@ export function EffectBrowser({ device, filter, aside }: BrowserProps) {
             );
           })}
         </div>
+        {below}
       </div>
 
       <aside className="split__side">
-        {aside}
         {active ? (
           <div className="panel">
             <div className="panel__head">

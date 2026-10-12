@@ -22,9 +22,11 @@ interface Props {
   className?: string;
   /** Slowly spin cubes when nobody is dragging them. */
   autoRotate?: boolean;
+  /** Real LED numbers when `layout` is a slice of a bigger one. */
+  labels?: Int32Array;
 }
 
-export function LedCanvas({ layout, deviceId, pixels, diagram, highlight, onPaint, brush = 1, className, autoRotate }: Props) {
+export function LedCanvas({ layout, deviceId, pixels, diagram, highlight, onPaint, brush = 1, className, autoRotate, labels }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const glowRef = useRef<HTMLCanvasElement>(null);
@@ -198,7 +200,7 @@ export function LedCanvas({ layout, deviceId, pixels, diagram, highlight, onPain
       <canvas ref={canvasRef} className="led-canvas__leds" />
       {hover && (
         <div className="led-canvas__tip" style={{ left: hover.x, top: hover.y }}>
-          LED {hover.index}
+          LED {labels ? labels[hover.index] : hover.index}
         </div>
       )}
       {isCube && !onPaint && <div className="led-canvas__hint">Drag to rotate</div>}

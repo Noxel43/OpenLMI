@@ -94,7 +94,7 @@ export function AudioTab({ device }: { device: Device }) {
     <EffectBrowser
       device={device}
       filter={audioOnly}
-      aside={
+      below={
         <div className="panel">
           <div className="panel__head">
             <div>
@@ -104,6 +104,7 @@ export function AudioTab({ device }: { device: Device }) {
           </div>
           <div className="panel__body">
             <AudioMeter />
+            <div className="field-pair">
             <Field label="Listen to">
               <Select
                 value={settings.audioSource}
@@ -124,6 +125,7 @@ export function AudioTab({ device }: { device: Device }) {
               format={(v) => `${v.toFixed(2)}x`}
               onChange={(audioGain) => saveSettings({ ...settings, audioGain })}
             />
+            </div>
           </div>
         </div>
       }

@@ -501,7 +501,7 @@ export function AnimationEditor({ device, layout, animation, onClose }: Props) {
           {playing ? (
             <LedCanvas layout={layout} deviceId={device.id} autoRotate />
           ) : slice ? (
-            <LedCanvas layout={slice.lp} pixels={slicePixels} onPaint={onPaint} brush={brush} />
+            <LedCanvas layout={slice.lp} pixels={slicePixels} onPaint={onPaint} brush={brush} labels={slice.map} />
           ) : (
             <LedCanvas layout={layout} pixels={frame.px} onPaint={onPaint} brush={brush} />
           )}

@@ -1904,6 +1904,18 @@ input[type="range"]:hover::-webkit-slider-thumb {
   border-radius: 12px;
   background: var(--surface-2);
 }
+.link-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-dim);
+  font-size: 12.5px;
+  user-select: text;
+}
 .tag {
   padding: 1px 7px;
   border-radius: 20px;
@@ -1968,6 +1980,7 @@ input[type="range"]:hover::-webkit-slider-thumb {
   position: relative;
   width: 64px;
   height: 42px;
+  margin: 9px 10px;
   border: 2px solid var(--border-strong);
   border-radius: 6px;
 }

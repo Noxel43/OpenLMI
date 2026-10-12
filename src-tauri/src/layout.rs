@@ -82,13 +82,19 @@ impl LayoutMap {
         (i != u32::MAX).then_some(i as usize)
     }
 
-    /// Coordinate an effect should travel along, plus whether sideways lanes
-    /// exist. Grids move vertically; everything else follows the strip.
+    /// Coordinate for effects with a natural "up": flames, meters, bouncing
+    /// balls. Anything with real height uses it; a bare strip (or a one-row
+    /// matrix) has none, so those run along the strip instead.
     pub fn along(&self, i: usize) -> f32 {
-        if self.is_grid && self.dims[1] > 1 {
-            self.up[i]
-        } else {
+        let flat = match self.kind {
+            "strip" => true,
+            "matrix" | "cube" => self.dims[1] <= 1,
+            _ => false,
+        };
+        if flat {
             self.u[i]
+        } else {
+            self.up[i]
         }
     }
 
@@ -519,6 +525,20 @@ mod tests {
         for e in &m.edges {
             assert!(e.b <= 0.3 + 1e-5 || e.a >= 0.7 - 1e-5, "span {e:?} overlaps the gap");
         }
+    }
+
+    #[test]
+    fn up_means_up_wherever_there_is_height() {
+        // On a monitor loop "along" is the height on screen, so fire sits at
+        // the bottom edge no matter where the strip happens to start.
+        let m = monitor(Corner::TopRight, false, 3);
+        for i in 0..m.count {
+            assert_eq!(m.along(i), 1.0 - m.pos[i][1]);
+        }
+        // A plain strip has no height: effects run from the first LED.
+        let s = build(&Layout::Strip { count: 10, reversed: false });
+        assert_eq!(s.along(0), 0.0);
+        assert_eq!(s.along(9), 1.0);
     }
 
     #[test]

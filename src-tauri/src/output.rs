@@ -288,6 +288,10 @@ fn serial_worker(slot: &Slot, port_name: &str, baud: u32, protocol: SerialProtoc
     let mut meter = FpsMeter::new();
 
     while let Some(rgb) = slot.next() {
+        if port_name.is_empty() {
+            slot.set(LinkState::Error, "No port chosen yet");
+            continue;
+        }
         if port.is_none() {
             if Instant::now() < retry_at {
                 continue;
@@ -355,6 +359,10 @@ fn network_worker(slot: &Slot, host: &str, port: u16, protocol: NetProtocol, uni
     let mut seq: u8 = 0;
 
     while let Some(rgb) = slot.next() {
+        if host.is_empty() {
+            slot.set(LinkState::Error, "No address entered yet");
+            continue;
+        }
         if socket.is_none() {
             if Instant::now() < retry_at {
                 continue;

@@ -22,6 +22,8 @@ export interface Projection {
   /** Draw order; cubes are painted back to front. */
   order: Uint32Array;
   square: boolean;
+  /** 3D layouts: LEDs overlap, so unlit ones shrink and lit ones add up. */
+  volumetric: boolean;
   /** The picture area of a monitor layout. */
   screen: { x: number; y: number; w: number; h: number } | null;
   /** Dense matrices are blitted as an image instead of dot by dot. */
@@ -39,7 +41,7 @@ export function project(lp: LayoutPreview, w: number, h: number, rot: Rotation =
   for (let i = 0; i < n; i++) order[i] = i;
   const availW = Math.max(10, w - pad * 2);
   const availH = Math.max(10, h - pad * 2);
-  const proj: Projection = { count: n, x, y, r, radius: 4, order, square: false, screen: null, raster: null };
+  const proj: Projection = { count: n, x, y, r, radius: 4, order, square: false, volumetric: false, screen: null, raster: null };
 
   switch (lp.kind) {
     case "strip": {
@@ -130,6 +132,7 @@ export function project(lp: LayoutPreview, w: number, h: number, rot: Rotation =
       }
       order.sort((a, b) => depth[b] - depth[a]);
       proj.radius = base;
+      proj.volumetric = true;
       return proj;
     }
 
@@ -252,14 +255,16 @@ export function drawLeds(
   const useGlow = glow && n <= 2500;
   if (useGlow) glow.globalCompositeOperation = "lighter";
 
-  // Unlit LEDs in one path: far cheaper than a fill per dot.
-  ctx.fillStyle = OFF;
+  // Unlit LEDs in one path: far cheaper than a fill per dot. In a cube they
+  // are drawn as faint specks so they don't hide the lit LEDs behind them.
+  const vol = proj.volumetric && !opts.diagram;
+  ctx.fillStyle = vol ? "rgba(150,160,190,0.2)" : OFF;
   ctx.beginPath();
   for (let k = 0; k < n; k++) {
     const i = proj.order[k];
     const lit = have ? (have[i * 3] | have[i * 3 + 1] | have[i * 3 + 2]) > 5 : opts.diagram;
     if (lit) continue;
-    const rr = proj.r[i];
+    const rr = vol ? proj.r[i] * 0.3 : proj.r[i];
     if (proj.square) ctx.rect(proj.x[i] - rr, proj.y[i] - rr, rr * 2, rr * 2);
     else {
       ctx.moveTo(proj.x[i] + rr, proj.y[i]);
@@ -282,10 +287,18 @@ export function drawLeds(
     } else {
       continue;
     }
-    const rr = proj.r[i];
     const px = proj.x[i];
     const py = proj.y[i];
-    ctx.fillStyle = `rgb(${Math.max(cr, 27)},${Math.max(cg, 30)},${Math.max(cb, 40)})`;
+    let rr = proj.r[i];
+    if (vol) {
+      // Size and opacity follow brightness, which reads as depth in a cube.
+      const level = Math.max(cr, cg, cb) / 255;
+      rr *= 0.45 + 0.75 * level;
+      ctx.globalAlpha = 0.35 + 0.65 * level;
+      ctx.fillStyle = `rgb(${cr},${cg},${cb})`;
+    } else {
+      ctx.fillStyle = `rgb(${Math.max(cr, 27)},${Math.max(cg, 30)},${Math.max(cb, 40)})`;
+    }
     if (proj.square) {
       ctx.fillRect(px - rr, py - rr, rr * 2, rr * 2);
     } else {
@@ -301,12 +314,15 @@ export function drawLeds(
       }
     }
     if (useGlow && !opts.diagram) {
+      glow.globalAlpha = vol ? 0.5 : 1;
       glow.fillStyle = `rgb(${cr},${cg},${cb})`;
       glow.beginPath();
       glow.arc(px, py, rr * 2.1, 0, Math.PI * 2);
       glow.fill();
     }
   }
+  ctx.globalAlpha = 1;
+  if (glow) glow.globalAlpha = 1;
 
   if (opts.diagram) drawWiring(ctx, proj);
 
@@ -368,7 +384,7 @@ function drawWiring(ctx: CanvasRenderingContext2D, proj: Projection) {
     for (let i = 0; i < n; i++) ctx.fillText(String(i), proj.x[i], proj.y[i] + 0.5);
   }
 
-  const marker = (i: number, colour: string, label: string) => {
+  const marker = (i: number, colour: string, label: string, preferAbove: boolean) => {
     const [px, py] = [proj.x[i], proj.y[i]];
     ctx.strokeStyle = colour;
     ctx.lineWidth = 2.5;
@@ -379,8 +395,10 @@ function drawWiring(ctx: CanvasRenderingContext2D, proj: Projection) {
     const tw = ctx.measureText(label).width + 12;
     // Keep the tag on the canvas.
     const tx = clamp(px, tw / 2 + 2, ctx.canvas.clientWidth - tw / 2 - 2);
-    const above = py - proj.r[i] - 22 > 2;
-    const ty = above ? py - proj.r[i] - 16 : py + proj.r[i] + 16;
+    const roomAbove = py - proj.r[i] - 26 > 2;
+    const roomBelow = py + proj.r[i] + 26 < ctx.canvas.clientHeight - 2;
+    const above = preferAbove ? roomAbove || !roomBelow : !roomBelow && roomAbove;
+    const ty = above ? py - proj.r[i] - 17 : py + proj.r[i] + 17;
     ctx.fillStyle = colour;
     ctx.beginPath();
     ctx.roundRect(tx - tw / 2, ty - 9, tw, 18, 9);
@@ -390,6 +408,8 @@ function drawWiring(ctx: CanvasRenderingContext2D, proj: Projection) {
     ctx.textBaseline = "middle";
     ctx.fillText(label, tx, ty + 0.5);
   };
-  if (n > 1) marker(n - 1, "#fb7185", `END ${n - 1}`);
-  marker(0, "#4ade80", "START 0");
+  // START goes above its LED and END below, so the tags stay apart even when
+  // a loop brings the two ends next to each other.
+  if (n > 1) marker(n - 1, "#fb7185", `END ${n - 1}`, false);
+  marker(0, "#4ade80", "START 0", true);
 }
