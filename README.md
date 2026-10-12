@@ -25,7 +25,7 @@ The builds are not code-signed, so Windows SmartScreen may show a warning the fi
 - **Any shape.** Strips, matrices, 3D cubes, rings and monitor backlights - including how they are wired (start corner, direction, zig-zag, offsets, a gap for the monitor stand).
 - **32 built-in effects** in six groups, each with its own controls and palettes: rainbow, fire, plasma, aurora, comets, twinkles, scrolling text and clock for matrices, and more.
 - **Animation editor.** Paint LEDs frame by frame, set timing and fades, import images and GIFs onto a matrix, and export an animation as a standalone Arduino sketch that plays with no PC attached.
-- **Ambient lighting.** The LEDs follow what is on your screen. Each LED mirrors the part of the picture it sits behind; black bars are skipped; smoothing, saturation and brightness are adjustable.
+- **Ambient lighting.** The LEDs follow what is on your screen. Each LED mirrors the part of the picture it sits behind; black bars are skipped; smoothing, saturation and brightness are adjustable. Capture is done on the GPU, so it stays light enough to leave running during films and games.
 - **Audio reactive.** Spectrum bars, VU meter, beat pulse and more, driven by whatever your PC is playing (or a microphone).
 - **Optional scripting.** A small sandboxed language for when you want to write your own effect, with live reload as you type.
 - **Works with common hardware.** USB serial (Adalight, TPM2) and Wi-Fi (DDP, WLED, Art-Net, E1.31). Generates firmware for Arduino-style boards; works with WLED out of the box.
@@ -93,6 +93,8 @@ For ambient lighting to put the right colour in the right place, OpenLMI needs t
 3. Choose which way the strip runs from there, clockwise or counter-clockwise (again, as seen from the front).
 4. If the strip starts part-way along an edge, such as bottom centre, enter how many LEDs past the corner it begins as the *start offset*.
 5. If the bottom edge has no LEDs where the stand is, set the *gap for the stand*.
+
+Rotated (portrait) displays and several displays are supported; pick which one to follow in the Ambient tab.
 
 Then use **Chase** to confirm: the dot should travel the same route as in the diagram. In the **Ambient** tab, the preview shows your screen with every LED's sampling area drawn on top in the colour that LED is showing, so a wrong corner or direction is obvious at a glance.
 
@@ -178,6 +180,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 | `src-tauri/src/layout.rs` | Turns a layout and its wiring into LED positions |
 | `src-tauri/src/effects/` | The built-in effects and their parameter schemas |
 | `src-tauri/src/ambient.rs` | Screen capture and per-LED sampling |
+| `src-tauri/src/screen_dxgi.rs` | Fast screen capture on Windows (desktop duplication, shrunk on the GPU) |
 | `src-tauri/src/audio.rs` | Audio capture, spectrum analysis, beat detection |
 | `src-tauri/src/script.rs` | The scripting sandbox |
 | `src-tauri/src/output.rs` | Serial and network protocols |

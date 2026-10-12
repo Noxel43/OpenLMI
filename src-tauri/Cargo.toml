@@ -35,6 +35,16 @@ parking_lot = "0.12"
 fastrand = "2"
 chrono = "0.4"
 
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+] }
+
 # The render loop does per-LED maths every frame, so keep debug builds usable.
 [profile.dev]
 opt-level = 1

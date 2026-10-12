@@ -14,6 +14,8 @@ pub mod firmware;
 pub mod layout;
 pub mod model;
 pub mod output;
+#[cfg(windows)]
+pub mod screen_dxgi;
 pub mod script;
 pub mod store;
 

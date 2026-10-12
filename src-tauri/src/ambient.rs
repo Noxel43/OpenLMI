@@ -109,8 +109,60 @@ impl ScreenCapture {
     }
 }
 
+/// Per-display capture state.
+struct Source {
+    device_name: String,
+    #[cfg(windows)]
+    duplicator: Option<crate::screen_dxgi::Duplicator>,
+    #[cfg(windows)]
+    retry_at: Instant,
+}
+
+impl Source {
+    fn new(device_name: String) -> Self {
+        Source {
+            device_name,
+            #[cfg(windows)]
+            duplicator: None,
+            #[cfg(windows)]
+            retry_at: Instant::now(),
+        }
+    }
+
+    /// The fast path: desktop duplication. `Ok(None)` means the screen has
+    /// not changed; `Err` means this path is unavailable right now.
+    #[cfg(windows)]
+    fn grab_fast(&mut self) -> Result<Option<crate::screen_dxgi::Shot>, ()> {
+        use crate::screen_dxgi::Duplicator;
+        if self.duplicator.is_none() {
+            if Instant::now() < self.retry_at {
+                return Err(());
+            }
+            match Duplicator::open(&self.device_name) {
+                Ok(d) => self.duplicator = Some(d),
+                Err(_) => {
+                    self.retry_at = Instant::now() + Duration::from_secs(5);
+                    return Err(());
+                }
+            }
+        }
+        let grabbed = self.duplicator.as_mut().map(Duplicator::grab);
+        match grabbed {
+            Some(Ok(shot)) => Ok(shot),
+            _ => {
+                // Display mode changes, the lock screen and the like end a
+                // duplication; start a fresh one shortly.
+                self.duplicator = None;
+                self.retry_at = Instant::now() + Duration::from_secs(1);
+                Err(())
+            }
+        }
+    }
+}
+
 fn capture_thread(shared: Arc<Shared>) {
     let mut monitors: Vec<xcap::Monitor> = Vec::new();
+    let mut sources: HashMap<String, Source> = HashMap::new();
     let mut listed_at = Instant::now();
     let mut seq = 0u64;
 
@@ -121,8 +173,9 @@ fn capture_thread(shared: Arc<Shared>) {
             w.retain(|_, at| at.elapsed() < Duration::from_secs(2));
             w.keys().cloned().collect()
         };
+        sources.retain(|key, _| wanted.contains(key));
+        shared.grids.lock().retain(|key, _| wanted.contains(key));
         if wanted.is_empty() {
-            shared.grids.lock().clear();
             monitors.clear();
             std::thread::sleep(Duration::from_millis(150));
             continue;
@@ -144,6 +197,27 @@ fn capture_thread(shared: Arc<Shared>) {
                 *shared.error.lock() = Some("No display found to capture".into());
                 continue;
             };
+            let device_name = monitor.name().unwrap_or_default();
+            let source = sources.entry(name.clone()).or_insert_with(|| Source::new(device_name.clone()));
+            if source.device_name != device_name {
+                *source = Source::new(device_name);
+            }
+
+            #[cfg(windows)]
+            match source.grab_fast() {
+                Ok(Some(shot)) => {
+                    seq += 1;
+                    let grid = downsample(&shot.rgba, shot.width, shot.height, seq);
+                    shared.grids.lock().insert(name.clone(), Arc::new(grid));
+                    *shared.error.lock() = None;
+                    continue;
+                }
+                // Nothing changed on screen: the grid we have is still right.
+                Ok(None) if shared.grids.lock().contains_key(name) => continue,
+                _ => {}
+            }
+
+            // Portable path, and the fallback when duplication is unavailable.
             match monitor.capture_image() {
                 Ok(image) => {
                     seq += 1;
