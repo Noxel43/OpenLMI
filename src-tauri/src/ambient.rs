@@ -1,9 +1,9 @@
 //! Ambient lighting: capture the screen, shrink it to a small grid, and work
 //! out which part of the picture each LED should mirror.
 
-use crate::color::Rgb;
+use crate::color::{smoothstep, Rgb};
 use crate::layout::{Edge, LayoutMap};
-use crate::model::{AmbientMapping, AmbientSettings};
+use crate::model::{AmbientMapping, AmbientSettings, AverageMethod};
 use parking_lot::Mutex;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -334,6 +334,136 @@ pub fn sample_rects(map: &LayoutMap, s: &AmbientSettings, aspect: f32) -> Vec<[f
         .collect()
 }
 
+// ----------------------------------------------------------------------------
+// Boiling an area of the screen down to one colour
+// ----------------------------------------------------------------------------
+
+/// Marks "no earlier choice" for the methods that remember one.
+const NO_PICK: u16 = u16::MAX;
+/// Hue is split into this many families of 30 degrees: red, orange, yellow...
+const FAMILIES: usize = 12;
+/// A new winner has to beat the current one by this margin. Without it, two
+/// colours covering nearly the same area would make the LEDs flip back and
+/// forth as the picture shimmers.
+const STICKINESS: f32 = 0.85;
+
+/// Reduces `px` to a single colour. `pick` carries the previous choice of the
+/// methods that vote (most common colour, dominant family) between frames.
+pub fn combine(method: AverageMethod, px: &[Rgb], pick: &mut u16, scratch: &mut Vec<f32>) -> Rgb {
+    if px.is_empty() {
+        return Rgb::BLACK;
+    }
+    match method {
+        AverageMethod::Mean => mean(px),
+        AverageMethod::Median => median(px, scratch),
+        AverageMethod::Mode => most_common(px, pick),
+        AverageMethod::Dominant => dominant_family(px, pick),
+    }
+}
+
+fn mean(px: &[Rgb]) -> Rgb {
+    let mut sum = Rgb::BLACK;
+    for p in px {
+        sum += *p;
+    }
+    sum.scale(1.0 / px.len() as f32)
+}
+
+/// The middle value of each channel.
+fn median(px: &[Rgb], scratch: &mut Vec<f32>) -> Rgb {
+    let mut middle = |channel: fn(&Rgb) -> f32| {
+        scratch.clear();
+        scratch.extend(px.iter().map(channel));
+        let k = scratch.len() / 2;
+        *scratch.select_nth_unstable_by(k, f32::total_cmp).1
+    };
+    Rgb::new(middle(|p| p.r), middle(|p| p.g), middle(|p| p.b))
+}
+
+/// Remembers the winner of a vote, keeping the previous one unless it has
+/// clearly been overtaken.
+fn settle(votes: &[f32], pick: &mut u16) -> usize {
+    let best = votes.iter().enumerate().max_by(|a, b| a.1.total_cmp(b.1)).map_or(0, |(i, _)| i);
+    let chosen = match votes.get(*pick as usize) {
+        Some(previous) if *previous >= votes[best] * STICKINESS => *pick as usize,
+        _ => best,
+    };
+    *pick = chosen as u16;
+    chosen
+}
+
+/// The single most common colour: pixels are sorted into a coarse grid of
+/// colours and the fullest cell wins. The result is the average of the pixels
+/// in that cell, so it is not limited to the grid's own colours.
+fn most_common(px: &[Rgb], pick: &mut u16) -> Rgb {
+    const LEVELS: usize = 8;
+    const CELLS: usize = LEVELS * LEVELS * LEVELS;
+    let mut votes = [0f32; CELLS];
+    let mut sums = [Rgb::BLACK; CELLS];
+    let level = |v: f32| ((v.clamp(0.0, 1.0) * LEVELS as f32) as usize).min(LEVELS - 1);
+    for p in px {
+        let cell = (level(p.r) * LEVELS + level(p.g)) * LEVELS + level(p.b);
+        votes[cell] += 1.0;
+        sums[cell] += *p;
+    }
+    let cell = settle(&votes, pick);
+    sums[cell].scale(1.0 / votes[cell].max(1.0))
+}
+
+/// Position on the colour wheel, `0..1`, for a pixel that has some colour.
+fn hue(p: Rgb, max: f32, chroma: f32) -> f32 {
+    let h = if max == p.r {
+        ((p.g - p.b) / chroma).rem_euclid(6.0)
+    } else if max == p.g {
+        (p.b - p.r) / chroma + 2.0
+    } else {
+        (p.r - p.g) / chroma + 4.0
+    };
+    h / 6.0
+}
+
+/// Groups pixels into hue families - all the purples together, all the greens
+/// together - and returns the average of the largest family. Greys and
+/// near-black pixels have no hue to speak of and do not vote.
+fn dominant_family(px: &[Rgb], pick: &mut u16) -> Rgb {
+    let mut votes = [0f32; FAMILIES];
+    let mut sums = [Rgb::BLACK; FAMILIES];
+    let mut everything = Rgb::BLACK;
+    let mut coloured = 0.0f32;
+    for p in px {
+        everything += *p;
+        let max = p.peak();
+        let chroma = max - p.r.min(p.g).min(p.b);
+        if max < 0.1 || chroma < 0.18 * max {
+            continue;
+        }
+        coloured += 1.0;
+        // Families overlap: a pixel counts fully for the family it is nearest
+        // to and partly for the one on either side. A colour that happens to
+        // sit on the border between two families therefore still forms one
+        // full-sized group instead of two half-sized ones.
+        let position = hue(*p, max, chroma) * FAMILIES as f32;
+        let offset = position - position.round(); // -0.5..0.5 of a family's width
+        let centre = position.round() as usize % FAMILIES;
+        let (up, down) = ((centre + 1) % FAMILIES, (centre + FAMILIES - 1) % FAMILIES);
+        for (family, weight) in [(centre, 1.0), (up, 0.5 + offset), (down, 0.5 - offset)] {
+            votes[family] += weight;
+            sums[family] += p.scale(weight);
+        }
+    }
+
+    let overall = everything.scale(1.0 / px.len() as f32);
+    if coloured <= 0.0 {
+        *pick = NO_PICK;
+        return overall;
+    }
+    let family = settle(&votes, pick);
+    let colour = sums[family].scale(1.0 / votes[family].max(1e-6));
+    // With only a sliver of colour on screen, lean back towards the plain
+    // average rather than lighting the room up for a handful of pixels.
+    overall.lerp(colour, smoothstep(0.03, 0.12, coloured / px.len() as f32))
+}
+
 /// Per-device ambient state: smoothed colours and cached sample areas.
 #[derive(Default)]
 pub struct AmbientState {
@@ -344,6 +474,14 @@ pub struct AmbientState {
     content: [f32; 4],
     last_seq: u64,
     primed: bool,
+    /// True when every LED samples the same area (whole-screen mode), so the
+    /// colour only needs working out once.
+    uniform: bool,
+    /// Each LED's previous choice, for the methods that vote.
+    picks: Vec<u16>,
+    method: AverageMethod,
+    area: Vec<Rgb>,
+    scratch: Vec<f32>,
 }
 
 impl AmbientState {
@@ -366,17 +504,24 @@ impl AmbientState {
                 *have += (want - *have) * if self.primed { 0.12 } else { 1.0 };
             }
             self.refresh_cells(g, map, s);
-            for (t, c) in self.target.iter_mut().zip(&self.cells) {
-                let [x0, y0, x1, y1] = *c;
-                let mut sum = Rgb::BLACK;
-                for y in y0..y1 {
-                    for px in &g.px[y * g.w + x0..y * g.w + x1] {
-                        sum += *px;
-                    }
+            if self.method != s.average || self.picks.len() != n {
+                // A remembered choice only means something to the method that made it.
+                self.method = s.average;
+                self.picks = vec![NO_PICK; n];
+            }
+            for i in 0..n {
+                if self.uniform && i > 0 {
+                    self.target[i] = self.target[0];
+                    continue;
                 }
-                let avg = sum.scale(1.0 / ((x1 - x0) * (y1 - y0)).max(1) as f32);
-                let lit = avg.saturate(s.saturation).scale(s.gain).clamped();
-                *t = lit.max(Rgb::new(s.min_brightness, s.min_brightness, s.min_brightness));
+                let [x0, y0, x1, y1] = self.cells[i];
+                self.area.clear();
+                for y in y0..y1 {
+                    self.area.extend_from_slice(&g.px[y * g.w + x0..y * g.w + x1]);
+                }
+                let colour = combine(s.average, &self.area, &mut self.picks[i], &mut self.scratch);
+                let lit = colour.saturate(s.saturation).scale(s.gain).clamped();
+                self.target[i] = lit.max(Rgb::new(s.min_brightness, s.min_brightness, s.min_brightness));
             }
             if !self.primed {
                 self.current.copy_from_slice(&self.target);
@@ -411,6 +556,7 @@ impl AmbientState {
                 [gx0, gy0, gx1, gy1]
             })
             .collect();
+        self.uniform = self.cells.windows(2).all(|pair| pair[0] == pair[1]);
         self.cells_key = Some(key);
     }
 }
@@ -530,5 +676,140 @@ mod tests {
             state.render(None, &map, &s, 0.016, &mut out);
         }
         assert!(out[0].r < 0.01);
+    }
+
+    // --- ways of combining an area into one colour ------------------------------
+
+    /// A screen built from stripes: each entry is (share of the width, colour).
+    fn stripes(parts: &[(f32, [u8; 3])]) -> ScreenGrid {
+        let mut px = Vec::with_capacity(GRID_W * GRID_H);
+        for _ in 0..GRID_H {
+            for x in 0..GRID_W {
+                let at = (x as f32 + 0.5) / GRID_W as f32;
+                let mut edge = 0.0;
+                let mut colour = parts.last().map_or([0, 0, 0], |p| p.1);
+                for (share, c) in parts {
+                    edge += share;
+                    if at < edge {
+                        colour = *c;
+                        break;
+                    }
+                }
+                px.push(Rgb::from_u8(colour[0], colour[1], colour[2]));
+            }
+        }
+        ScreenGrid { w: GRID_W, h: GRID_H, px, aspect: 16.0 / 9.0, seq: 1, content: [0.0, 0.0, 1.0, 1.0] }
+    }
+
+    fn whole_screen(grid: &ScreenGrid, average: AverageMethod) -> [u8; 3] {
+        let map = monitor_map();
+        let settings = AmbientSettings {
+            mapping: AmbientMapping::Average,
+            average,
+            smoothing: 0.0,
+            saturation: 1.0,
+            black_bars: false,
+            ..Default::default()
+        };
+        let mut out = vec![Rgb::BLACK; map.count];
+        AmbientState::default().render(Some(grid), &map, &settings, 0.016, &mut out);
+        assert!(out.iter().all(|c| *c == out[0]), "whole-screen mode gives every LED the same colour");
+        out[0].to_u8()
+    }
+
+    #[test]
+    fn the_four_averages_disagree_in_the_expected_ways() {
+        // 55% deep blue, 35% red, 10% white.
+        let grid = stripes(&[(0.55, [0, 0, 200]), (0.35, [230, 20, 20]), (0.10, [255, 255, 255])]);
+
+        // Mean: everything mixed together into a dull purple.
+        let mean = whole_screen(&grid, AverageMethod::Mean);
+        assert!(mean[0] > 80 && mean[2] > 110 && mean[1] < 60, "mean {mean:?}");
+
+        // Median: more than half the screen is blue, so the middle pixel is blue.
+        assert_eq!(whole_screen(&grid, AverageMethod::Median), [0, 0, 200]);
+        // Mode: the single most common colour.
+        assert_eq!(whole_screen(&grid, AverageMethod::Mode), [0, 0, 200]);
+        // Dominant family: the blues.
+        assert_eq!(whole_screen(&grid, AverageMethod::Dominant), [0, 0, 200]);
+    }
+
+    #[test]
+    fn dominant_family_averages_every_shade_of_the_winning_hue() {
+        // Four different purples make up 48% of the screen between them; a
+        // single green covers 30% and the rest is black. No single purple
+        // covers as much as the green does.
+        let purples = [[150, 40, 220], [110, 30, 160], [190, 110, 250], [130, 60, 200]];
+        let mut parts: Vec<(f32, [u8; 3])> = purples.iter().map(|c| (0.12, *c)).collect();
+        parts.push((0.30, [30, 200, 60]));
+        parts.push((0.22, [0, 0, 0]));
+        let grid = stripes(&parts);
+
+        // The most common single colour is the green...
+        assert_eq!(whole_screen(&grid, AverageMethod::Mode), [30, 200, 60]);
+        // ...but as a family the purples win, and the result is their average.
+        let got = whole_screen(&grid, AverageMethod::Dominant);
+        let want: Vec<i32> = (0..3).map(|c| purples.iter().map(|p| p[c] as i32).sum::<i32>() / 4).collect();
+        for c in 0..3 {
+            assert!((got[c] as i32 - want[c]).abs() <= 6, "purple average: got {got:?}, expected about {want:?}");
+        }
+        // The plain mean, by contrast, is a murky mix of all of it.
+        let mean = whole_screen(&grid, AverageMethod::Mean);
+        assert!(mean[1] > 70, "the mean lets the green bleed in: {mean:?}");
+    }
+
+    #[test]
+    fn a_colour_on_the_border_between_two_families_is_not_split() {
+        // Hue 15 degrees sits exactly between "red" and "orange". 55% of the
+        // screen is that colour, 45% is blue: the orange-red must still win.
+        let grid = stripes(&[(0.55, [255, 64, 0]), (0.45, [0, 0, 255])]);
+        assert_eq!(whole_screen(&grid, AverageMethod::Dominant), [255, 64, 0]);
+    }
+
+    #[test]
+    fn a_few_coloured_pixels_do_not_light_up_a_dark_scene() {
+        // 2% vivid red on an otherwise black screen.
+        let grid = stripes(&[(0.02, [255, 0, 0]), (0.98, [0, 0, 0])]);
+        let dominant = whole_screen(&grid, AverageMethod::Dominant);
+        assert!(dominant[0] < 40, "a sliver of red should stay dim: {dominant:?}");
+        // By a quarter of the screen it is the dominant colour outright.
+        let grid = stripes(&[(0.25, [255, 0, 0]), (0.75, [0, 0, 0])]);
+        assert_eq!(whole_screen(&grid, AverageMethod::Dominant), [255, 0, 0]);
+        // And a grey screen has no hue at all, so it falls back to the mean.
+        let grey = stripes(&[(1.0, [120, 120, 120])]);
+        assert_eq!(whole_screen(&grey, AverageMethod::Dominant), [120, 120, 120]);
+    }
+
+    #[test]
+    fn near_ties_do_not_make_the_choice_flip() {
+        let red_ahead = stripes(&[(0.52, [255, 0, 0]), (0.48, [0, 0, 255])]);
+        let blue_ahead = stripes(&[(0.48, [255, 0, 0]), (0.52, [0, 0, 255])]);
+        let blue_clear = stripes(&[(0.30, [255, 0, 0]), (0.70, [0, 0, 255])]);
+        for method in [AverageMethod::Mode, AverageMethod::Dominant] {
+            let mut pick = NO_PICK;
+            let mut scratch = Vec::new();
+            let mut choose = |g: &ScreenGrid| combine(method, &g.px, &mut pick, &mut scratch).to_u8();
+            assert_eq!(choose(&red_ahead), [255, 0, 0]);
+            // Blue edges ahead by a whisker: stay with red.
+            assert_eq!(choose(&blue_ahead), [255, 0, 0], "{method:?} flipped on a near tie");
+            // Blue takes over properly: follow it.
+            assert_eq!(choose(&blue_clear), [0, 0, 255]);
+        }
+    }
+
+    #[test]
+    fn averaging_methods_also_apply_to_each_led_zone() {
+        // Top edge: left half red, right half blue. With zones, each LED
+        // still follows its own part of the screen whatever the method.
+        let grid = stripes(&[(0.5, [255, 0, 0]), (0.5, [0, 0, 255])]);
+        let map = monitor_map();
+        for average in [AverageMethod::Mean, AverageMethod::Median, AverageMethod::Mode, AverageMethod::Dominant] {
+            let settings = AmbientSettings { average, smoothing: 0.0, saturation: 1.0, black_bars: false, ..Default::default() };
+            let mut out = vec![Rgb::BLACK; map.count];
+            AmbientState::default().render(Some(&grid), &map, &settings, 0.016, &mut out);
+            // 5 LEDs up the left, then 9 across the top.
+            assert_eq!(out[5].to_u8(), [255, 0, 0], "{average:?}: top-left");
+            assert_eq!(out[13].to_u8(), [0, 0, 255], "{average:?}: top-right");
+        }
     }
 }

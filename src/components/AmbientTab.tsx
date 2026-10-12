@@ -2,10 +2,21 @@ import { MonitorPlay, SlidersHorizontal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { DEFAULT_AMBIENT, useApp } from "../store";
-import type { AmbientSettings, Device, MonitorInfo } from "../types";
+import type { AmbientSettings, AverageMethod, Device, MonitorInfo } from "../types";
 import { Button, Empty, Field, Notice, Segmented, Select, Slider, Toggle } from "./ui";
 
 type Zone = [number, number, number, number];
+
+const AVERAGES: { value: AverageMethod; label: string; hint: string }[] = [
+  { value: "mean", label: "Average (mean)", hint: "Every pixel counts equally. Smooth, but busy scenes blend into a muddy mix." },
+  { value: "median", label: "Median", hint: "The middle colour. Small bright or dark patches are ignored." },
+  { value: "mode", label: "Most common colour (mode)", hint: "The single colour that covers the most area." },
+  {
+    value: "dominant",
+    label: "Dominant colour family",
+    hint: "Similar hues are grouped - all the purples, all the greens - and the biggest group is averaged. Vivid, never muddy.",
+  },
+];
 
 /** The screen as the LEDs see it, with each LED's sample area drawn on top in
  *  the colour that LED is currently showing. */
@@ -61,12 +72,24 @@ function ScreenPreview({ device, settings, aspect }: { device: Device; settings:
           ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
           ctx.clearRect(0, 0, w, h);
           ctx.imageSmoothingEnabled = true;
-          ctx.globalAlpha = 0.55;
+          const whole = settings.mapping === "average";
+          ctx.globalAlpha = whole ? 0.9 : 0.55;
           ctx.drawImage(small, 0, 0, w, h);
           ctx.globalAlpha = 1;
 
+          if (whole && frame.length >= 3) {
+            // One colour for everything: show it as a frame around the picture.
+            const edge = Math.max(10, Math.round(h * 0.06));
+            ctx.strokeStyle = `rgb(${frame[0]},${frame[1]},${frame[2]})`;
+            ctx.lineWidth = edge;
+            ctx.strokeRect(edge / 2, edge / 2, w - edge, h - edge);
+            ctx.strokeStyle = "rgba(255,255,255,0.3)";
+            ctx.lineWidth = 1;
+            ctx.strokeRect(edge + 0.5, edge + 0.5, w - edge * 2 - 1, h - edge * 2 - 1);
+          }
+
           const [cl, ct, cr, cb] = bars;
-          const zs = zones.current;
+          const zs = whole ? [] : zones.current;
           ctx.lineWidth = 1;
           for (let i = 0; i < zs.length; i++) {
             const [x0, y0, x1, y1] = zs[i];
@@ -94,7 +117,7 @@ function ScreenPreview({ device, settings, aspect }: { device: Device; settings:
       alive = false;
       clearTimeout(timer);
     };
-  }, [device.id, settings.monitor, settings.blackBars]);
+  }, [device.id, settings.monitor, settings.blackBars, settings.mapping]);
 
   return (
     <div className="screen-preview" style={{ aspectRatio: String(aspect) }}>
@@ -166,7 +189,9 @@ export function AmbientTab({ device }: { device: Device }) {
         {layoutHint}
         <ScreenPreview device={device} settings={settings} aspect={aspect} />
         <p className="muted small">
-          The coloured blocks are the areas each LED samples, filled with the colour it is showing right now.
+          {settings.mapping === "average"
+            ? "The frame around the picture is the one colour every LED is showing right now."
+            : "The coloured blocks are the areas each LED samples, filled with the colour it is showing right now."}
           {isMonitor && (
             <>
               {" "}
@@ -208,6 +233,16 @@ export function AmbientTab({ device }: { device: Device }) {
                   { value: "average", label: "Whole screen", title: "All LEDs show the average colour of the screen" },
                 ]}
                 onChange={(mapping) => update({ mapping })}
+              />
+            </Field>
+            <Field
+              label={settings.mapping === "average" ? "Work out the screen's colour by" : "Work out each area's colour by"}
+              hint={AVERAGES.find((a) => a.value === settings.average)?.hint}
+            >
+              <Select
+                value={settings.average ?? "mean"}
+                options={AVERAGES.map((a) => ({ value: a.value, label: a.label }))}
+                onChange={(average) => update({ average })}
               />
             </Field>
             {settings.mapping === "zones" && device.layout.type !== "matrix" && device.layout.type !== "strip" && (

@@ -363,6 +363,23 @@ pub enum AmbientMapping {
     Average,
 }
 
+/// How the pixels in an area are boiled down to one colour.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum AverageMethod {
+    /// Every pixel counts equally. Smooth, but mixed scenes go muddy.
+    #[default]
+    Mean,
+    /// The middle value of each channel: shrugs off small bright or dark
+    /// patches.
+    Median,
+    /// The single most common colour.
+    Mode,
+    /// Similar hues are grouped into families (all the purples, all the
+    /// greens...) and the biggest family is averaged.
+    Dominant,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AmbientSettings {
@@ -380,6 +397,8 @@ pub struct AmbientSettings {
     /// Ignore letterbox / pillarbox bars.
     pub black_bars: bool,
     pub mapping: AmbientMapping,
+    /// How each area (or the whole screen) is reduced to one colour.
+    pub average: AverageMethod,
 }
 
 impl Default for AmbientSettings {
@@ -393,6 +412,7 @@ impl Default for AmbientSettings {
             min_brightness: 0.0,
             black_bars: true,
             mapping: AmbientMapping::Zones,
+            average: AverageMethod::Mean,
         }
     }
 }

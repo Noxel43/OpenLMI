@@ -51,6 +51,7 @@ export const DEFAULT_AMBIENT: AmbientSettings = {
   minBrightness: 0,
   blackBars: true,
   mapping: "zones",
+  average: "mean",
 };
 
 interface AppState {

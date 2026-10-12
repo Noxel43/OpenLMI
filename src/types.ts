@@ -61,6 +61,8 @@ export interface OutputSettings {
 export type ParamValue = number | boolean | string | string[];
 export type Params = Record<string, ParamValue>;
 
+export type AverageMethod = "mean" | "median" | "mode" | "dominant";
+
 export interface AmbientSettings {
   monitor: string;
   depth: number;
@@ -70,6 +72,8 @@ export interface AmbientSettings {
   minBrightness: number;
   blackBars: boolean;
   mapping: "zones" | "average";
+  /** How each area (or the whole screen) is reduced to one colour. */
+  average: AverageMethod;
 }
 
 export type Source =
