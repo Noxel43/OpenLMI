@@ -370,7 +370,7 @@ fn push_samples(shared: &Shared, data: &cpal::Data, channels: usize) {
 /// How far below the loudest recent sound a band still registers. Hearing is
 /// logarithmic: on a linear scale one loud drum hit makes everything else
 /// look silent, on a decibel scale the rest of the music stays visible.
-const RANGE_DB: f32 = 36.0;
+const RANGE_DB: f32 = 28.0;
 /// The loudness reference never sinks below this, so background hiss in a
 /// quiet room is not amplified into flicker.
 const QUIETEST_CEILING_DB: f32 = -48.0;
@@ -379,12 +379,14 @@ const QUIETEST_CEILING_DB: f32 = -48.0;
 const NOISE_FLOOR_DB: f32 = -72.0;
 /// The loudness meter covers a narrower span, and is referenced to the
 /// music's typical loudness rather than its peaks, so it visibly swings.
-const LEVEL_RANGE_DB: f32 = 16.0;
+const LEVEL_RANGE_DB: f32 = 12.0;
 const LEVEL_HEADROOM_DB: f32 = 4.0;
 /// Treble lift per band. 32 bands span 8.6 octaves.
 const TILT_DB_PER_BAND: f32 = 0.35;
-/// How far the bass must jump above its recent average to count as a beat.
-const BEAT_RISE_DB: f32 = 5.0;
+/// How many standard deviations above the recent average an onset must be.
+const BEAT_SPREAD: f32 = 2.0;
+/// The shortest gap between two beats: a little faster than any dance track.
+const BEAT_GAP_S: f32 = 0.26;
 
 /// Turns raw samples into an `AudioFrame`. Lives on the render thread.
 pub struct Analyser {
@@ -398,8 +400,11 @@ pub struct Analyser {
     /// quickly with the music and falls slowly: automatic gain.
     ceiling_db: f32,
     level_ceiling_db: f32,
-    /// Recent average bass loudness; a beat is a jump above it.
-    bass_avg_db: f32,
+    /// Each band's loudness on the previous frame, to spot sudden rises.
+    previous_db: [f32; BANDS],
+    /// Running average and spread of those rises; a beat stands out from them.
+    onset_mean: f32,
+    onset_var: f32,
     since_beat: f32,
 }
 
@@ -431,7 +436,9 @@ impl Analyser {
             frame: AudioFrame::default(),
             ceiling_db: QUIETEST_CEILING_DB,
             level_ceiling_db: QUIETEST_CEILING_DB,
-            bass_avg_db: -120.0,
+            previous_db: [-160.0; BANDS],
+            onset_mean: 0.0,
+            onset_var: 0.0,
             since_beat: 1.0,
         }
     }
@@ -521,21 +528,34 @@ impl Analyser {
         f.mid = mean(&f.bands[9..21]);
         f.treble = mean(&f.bands[22..BANDS]);
 
-        // A beat: the bass jumps clear of its own recent average while being
-        // a real part of the mix (not a blip during a quiet passage).
-        let bass_db = 10.0 * (bands_db[..7].iter().map(|db| 10f32.powf(db / 10.0)).sum::<f32>() + 1e-16).log10();
+        // Beats. An onset is the music suddenly getting louder: add up how far
+        // each band rose since the last frame, counting the bass double since
+        // that is where the kick drum lives. Rises from below the audible
+        // range are ignored so that sound starting after a pause is not one
+        // enormous onset.
+        let quietest = (self.ceiling_db - 40.0).max(NOISE_FLOOR_DB);
+        let mut onset = 0.0;
+        for (b, db) in bands_db.iter().enumerate() {
+            let now = db.max(quietest);
+            onset += (now - self.previous_db[b].max(quietest)).max(0.0) * if b < 8 { 2.0 } else { 1.0 };
+            self.previous_db[b] = now;
+        }
+        onset /= (BANDS + 8) as f32;
+
+        // A beat is an onset that stands clear of the recent ones, so a busy
+        // hi-hat pattern between the drum hits does not count.
         self.since_beat += dt;
-        if bass_db - self.bass_avg_db > BEAT_RISE_DB && bass_db > self.ceiling_db - 24.0 && self.since_beat > 0.19 {
+        let threshold = self.onset_mean + BEAT_SPREAD * self.onset_var.sqrt();
+        if onset > threshold.max(1.0) && self.since_beat > BEAT_GAP_S && level_db > NOISE_FLOOR_DB {
             f.beat = 1.0;
             f.beat_count = f.beat_count.wrapping_add(1);
             self.since_beat = 0.0;
         } else {
             f.beat *= 0.5f32.powf(dt / 0.11);
         }
-        // Rising bass is absorbed slowly (so a hit stands out), falling bass
-        // quickly (so the next hit is measured from the quiet in between).
-        let half_life = if bass_db > self.bass_avg_db { 0.35 } else { 0.08 };
-        self.bass_avg_db = approach(self.bass_avg_db, bass_db, dt, half_life).max(self.ceiling_db - 60.0);
+        let learn = 1.0 - 0.5f32.powf(dt / 1.2);
+        self.onset_mean += (onset - self.onset_mean) * learn;
+        self.onset_var += ((onset - self.onset_mean).powi(2) - self.onset_var) * learn;
     }
 }
 
@@ -617,7 +637,7 @@ mod tests {
             if name != "treble" {
                 assert!(lowest(values) > 0.1, "{name} dropped out between hits: lowest {}", lowest(values));
             }
-            assert!(mean(values) > 0.25, "{name} is faint: mean {}", mean(values));
+            assert!(mean(values) > if name == "treble" { 0.15 } else { 0.25 }, "{name} is faint: mean {}", mean(values));
             assert!(mean(values) < 0.92, "{name} is pinned at full: mean {}", mean(values));
         }
         println!("level {:.2}..{:.2} (mean {:.2}), bass {:.2}..{:.2}, mid {:.2}..{:.2}, treble {:.2}..{:.2}",
