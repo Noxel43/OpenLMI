@@ -37,6 +37,13 @@ pub fn effects() -> Vec<EffectDef> {
     ]
 }
 
+/// Band levels are on a decibel scale, so ordinary music sits in the upper
+/// half most of the time. Brightness-coded effects stretch that upper part
+/// over the full range, otherwise everything would glow evenly.
+fn punch(level: f32, floor: f32, curve: f32) -> f32 {
+    ((level - floor) / (1.0 - floor)).clamp(0.0, 1.0).powf(curve)
+}
+
 fn spectrum(cx: &Ctx, out: &mut [Rgb]) {
     let pal = cx.p.palette();
     let sens = cx.p.num("sensitivity");
@@ -52,7 +59,7 @@ fn spectrum(cx: &Ctx, out: &mut [Rgb]) {
             let lit = ((level - cx.map.up[i]) * rows + 0.5).clamp(0.0, 1.0);
             pal.sample_clamped(f).lerp(Rgb::WHITE, cx.map.up[i] * 0.35).scale(lit)
         } else {
-            pal.sample_clamped(f).scale(level.powf(1.3))
+            pal.sample_clamped(f).scale(punch(level, 0.15, 1.3))
         };
     }
 }
@@ -105,7 +112,7 @@ impl Effect for Beat {
         let n = pal.stops.len().max(1) as i64;
         let c = pal.stops.get(self.index.rem_euclid(n) as usize).copied().unwrap_or(Rgb::WHITE);
         let floor = cx.p.num("floor");
-        let swell = (cx.audio.bass * cx.p.num("sensitivity") * 0.35).min(0.35);
+        let swell = punch(cx.audio.bass * cx.p.num("sensitivity"), 0.5, 1.0) * 0.3;
         out.fill(c.scale((floor + swell + self.env * (1.0 - floor)).min(1.0)));
     }
 }
@@ -123,12 +130,18 @@ impl Effect for SoundWave {
         let pal = cx.p.palette();
         let sens = cx.p.num("sensitivity");
         let a = cx.audio;
-        // Bass, mids and treble each pull towards a different part of the palette.
-        let now = (pal.sample_clamped(0.05).scale(a.bass)
-            + pal.sample_clamped(0.5).scale(a.mid)
-            + pal.sample_clamped(0.95).scale(a.treble))
-        .scale(sens * 1.2)
-        .clamped();
+        // Colour: bass, mids and treble each pull towards a different part of
+        // the palette. Cubing exaggerates whichever is strongest, and the mix
+        // is an average (not a sum) so it never washes out to white.
+        let pulls = [(0.05, a.bass.powi(3)), (0.5, a.mid.powi(3)), (0.95, a.treble.powi(3))];
+        let total: f32 = pulls.iter().map(|p| p.1).sum();
+        let mut colour = Rgb::BLACK;
+        for (at, weight) in pulls {
+            colour += pal.sample_clamped(at).scale(weight / total.max(1e-6));
+        }
+        // Brightness: how loud this moment is, with beats standing out.
+        let loud = punch(a.level * sens, 0.35, 1.5).max(a.beat * 0.9);
+        let now = colour.scale(loud).clamped();
 
         self.owed += cx.dt * 90.0;
         while self.owed >= 1.0 {
@@ -153,8 +166,7 @@ impl Effect for SoundWave {
 fn glow(cx: &Ctx, out: &mut [Rgb]) {
     let pal = cx.p.palette();
     let floor = cx.p.num("floor");
-    let level = (cx.audio.level * cx.p.num("sensitivity")).min(1.0);
-    let b = (floor + (1.0 - floor) * level.powf(1.4)).min(1.0);
+    let b = (floor + (1.0 - floor) * punch(cx.audio.level * cx.p.num("sensitivity"), 0.3, 1.3)).min(1.0);
     for (i, o) in out.iter_mut().enumerate() {
         *o = pal.sample(cx.t * 0.03 + cx.audio.treble * 0.15 + cx.map.u[i] * 0.2).scale(b);
     }

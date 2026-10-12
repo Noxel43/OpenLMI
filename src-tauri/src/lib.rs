@@ -116,8 +116,14 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
 }
 
 pub fn run() {
-    let app = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main_window(app)))
+    let mut builder = tauri::Builder::default();
+    // Normally a second launch just brings the first window forward. A copy
+    // started with its own settings folder is a separate profile, though, and
+    // may run alongside the main one.
+    if std::env::var_os("OPENLMI_CONFIG_DIR").is_none() {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main_window(app)));
+    }
+    let app = builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,

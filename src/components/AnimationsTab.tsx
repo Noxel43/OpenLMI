@@ -5,7 +5,7 @@ import type { Animation, Device } from "../types";
 import { base64ToBytes, bytesToBase64, plural, uid } from "../util";
 import { AnimationEditor } from "./AnimationEditor";
 import { FrameThumb, resamplePixels } from "./frames";
-import { importImages, MAX_FRAMES } from "./imageImport";
+import { importImages, inNameOrder, MAX_FRAMES } from "./imageImport";
 import { Button, Empty, Slider } from "./ui";
 
 function totalSeconds(a: Animation): string {
@@ -55,7 +55,7 @@ export function AnimationsTab({ device, onEditing }: { device: Device; onEditing
       if (frames.length === 0) return;
       const animation: Animation = {
         id: uid(),
-        name: files[0].name.replace(/\.[^.]+$/, "") || "Imported",
+        name: inNameOrder(files)[0].name.replace(/\.[^.]+$/, "") || "Imported",
         count: layout.count,
         looped: true,
         frames: frames.map((f) => ({ durationMs: f.durationMs, fade: false, pixels: bytesToBase64(f.px) })),

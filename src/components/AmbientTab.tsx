@@ -192,7 +192,7 @@ export function AmbientTab({ device }: { device: Device }) {
           {settings.mapping === "average"
             ? "The frame around the picture is the one colour every LED is showing right now."
             : "The coloured blocks are the areas each LED samples, filled with the colour it is showing right now."}
-          {isMonitor && (
+          {isMonitor && settings.mapping === "zones" && (
             <>
               {" "}
               Colours on the wrong side or running backwards? Fix the wiring in{" "}

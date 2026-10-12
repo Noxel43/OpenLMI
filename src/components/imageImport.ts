@@ -73,12 +73,17 @@ function rasterise(ctx: CanvasRenderingContext2D, picture: Picture, w: number, h
   return ctx.getImageData(0, 0, w, h).data;
 }
 
+/** Files in name order, counting numbers properly ("step2" before "step10"). */
+export function inNameOrder(files: File[]): File[] {
+  return [...files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+}
+
 /**
- * Reads image files into frames for `layout`. Files are taken in name order
- * ("step2" before "step10"). At most `maxFrames` frames are returned.
+ * Reads image files into frames for `layout`, taking the files in name
+ * order. At most `maxFrames` frames are returned.
  */
 export async function importImages(files: File[], layout: LayoutPreview, maxFrames: number): Promise<ImportedFrame[]> {
-  const ordered = [...files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  const ordered = inNameOrder(files);
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
   const frames: ImportedFrame[] = [];

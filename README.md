@@ -23,10 +23,11 @@ The builds are not code-signed, so Windows SmartScreen may show a warning the fi
 
 - **No code needed.** Everything is point and click, with a live preview of your LEDs.
 - **Any shape.** Strips, matrices, 3D cubes, rings and monitor backlights - including how they are wired (start corner, direction, zig-zag, offsets, a gap for the monitor stand).
-- **32 built-in effects** in six groups, each with its own controls and palettes: rainbow, fire, plasma, aurora, comets, twinkles, scrolling text and clock for matrices, and more.
-- **Animation editor.** Paint LEDs frame by frame, set timing and fades, import images and GIFs onto a matrix, and export an animation as a standalone Arduino sketch that plays with no PC attached.
-- **Ambient lighting.** The LEDs follow what is on your screen. Each LED mirrors the part of the picture it sits behind; black bars are skipped; smoothing, saturation and brightness are adjustable. Capture is done on the GPU, so it stays light enough to leave running during films and games.
-- **Audio reactive.** Spectrum bars, VU meter, beat pulse and more, driven by whatever your PC is playing (or a microphone).
+- **33 built-in effects** in six groups, each with its own controls and palettes: rainbow, fire, plasma, aurora, comets, twinkles, and for matrices scrolling text, a clock and a library of pixel-art icons.
+- **Animation editor.** Paint LEDs frame by frame, set timing and fades, stamp icons, and export an animation as a standalone Arduino sketch that plays with no PC attached.
+- **Pictures in, animation out.** Import an image, several images or a GIF and they become an animation - see [Icons and pictures](#icons-and-pictures).
+- **Ambient lighting.** The LEDs follow what is on your screen. Each LED mirrors the part of the picture it sits behind, or all of them show one colour for the whole screen - worked out as a mean, a median, the most common colour, or the dominant colour family. Black bars are skipped; smoothing, saturation and brightness are adjustable. Capture is done on the GPU, so it stays light enough to leave running during films and games.
+- **Audio reactive.** Spectrum bars, VU meter, beat pulse and more, driven by whatever your PC is playing (or a microphone). A silent built-in demo beat lets you try them without playing anything.
 - **Optional scripting.** A small sandboxed language for when you want to write your own effect, with live reload as you type.
 - **Works with common hardware.** USB serial (Adalight, TPM2) and Wi-Fi (DDP, WLED, Art-Net, E1.31). Generates firmware for Arduino-style boards; works with WLED out of the box.
 - **Looks after your LEDs.** Brightness, gamma, white balance, colour order and a power budget that dims frames which would draw too much current.
@@ -37,6 +38,8 @@ The builds are not code-signed, so Windows SmartScreen may show a warning the fi
 | --- | --- |
 | ![Animation editor](docs/screenshots/animation-editor.png) | ![Wiring set-up for a monitor backlight](docs/screenshots/wiring.png) |
 | Paint animations frame by frame | Describe the wiring and check it against a diagram |
+| ![Icon library](docs/screenshots/icons.png) | ![Audio spectrum](docs/screenshots/audio.png) |
+| Pixel-art icons for matrices | Audio effects, here from the built-in demo beat |
 | ![Script editor](docs/screenshots/code.png) | ![3D cube preview](docs/screenshots/cube.png) |
 | Write your own effects, live | 3D cubes with a rotatable preview |
 
@@ -99,6 +102,41 @@ For ambient lighting to put the right colour in the right place, OpenLMI needs t
 Rotated (portrait) displays and several displays are supported; pick which one to follow in the Ambient tab.
 
 Then use **Chase** to confirm: the dot should travel the same route as in the diagram. In the **Ambient** tab, the preview shows your screen with every LED's sampling area drawn on top in the colour that LED is showing, so a wrong corner or direction is obvious at a glance.
+
+### Choosing the colour in ambient mode
+
+In the **Ambient** tab, *Colour from* decides what each LED looks at:
+
+- **Screen areas** - every LED follows its own part of the picture.
+- **Whole screen** - every LED shows the same colour, taken from the whole picture.
+
+Either way, *Work out the colour by* decides how the pixels in that area become one colour:
+
+| Method | What it does | Good for |
+| --- | --- | --- |
+| Average (mean) | Every pixel counts equally. | Smooth, faithful light. Busy scenes can blend into a muddy mix. |
+| Median | The middle value of each colour channel. | Ignoring small bright or dark patches such as subtitles or a logo. |
+| Most common colour (mode) | The single colour that covers the most area. | Flat-coloured content: cartoons, games with solid backgrounds. |
+| Dominant colour family | Similar hues are grouped - all the purples together, all the greens together - and the biggest group is averaged. Greys and near-black do not count. | Vivid light that never turns muddy. |
+
+The two voting methods stay with their choice when two colours are nearly tied, so the LEDs do not flip back and forth.
+
+## Icons and pictures
+
+**Icons.** On a matrix, *Effects > Matrix > Icon* shows one of 37 built-in pixel-art icons (symbols, arrows, weather, a few game characters). They are drawn 8 x 8 and zoomed by whole pixels to fill the matrix, centred. *Motion* can pulse, bounce, scroll or blink them. In the animation editor, **Add an icon** stamps one onto the frame you are painting.
+
+**Pictures.** The **Import** button on the Animations tab turns image files into an animation and starts playing it:
+
+- On a **matrix**, a picture becomes a frame (scaled to fit, pixel art kept crisp). A GIF becomes one frame per GIF frame with its own timing. Select several pictures at once and each becomes a frame, in file-name order (`step2` before `step10`).
+- On a **strip, ring or backlight** there is no second dimension to draw into, so time takes its place: every *row* of the picture is one step of the animation, and its columns are spread along the LEDs. Draw a 60-pixel-wide image in any paint program and each row you add is the next step for a 60-LED strip.
+
+Imported animations open in the editor like any other, so timing, fades and individual pixels can still be changed.
+
+## Audio
+
+Audio effects listen to **System audio** by default - whatever the PC is playing - so there is nothing to set up. Other choices under *Listen to* are any microphone or line input, and a **Demo beat**: a silent test signal for checking that the LEDs react.
+
+The spectrum is measured in decibels with automatic gain, so quiet and loud playback look the same; *Input gain* is there for sources that are very quiet. If the meter in the Audio tab is moving, the effects will too.
 
 ## Connections
 
@@ -180,7 +218,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 | --- | --- |
 | `src-tauri/src/engine.rs` | The render loop: draws every device, applies brightness, gamma and the power budget |
 | `src-tauri/src/layout.rs` | Turns a layout and its wiring into LED positions |
-| `src-tauri/src/effects/` | The built-in effects and their parameter schemas |
+| `src-tauri/src/effects/` | The built-in effects, the icon library and their parameter schemas |
 | `src-tauri/src/ambient.rs` | Screen capture and per-LED sampling |
 | `src-tauri/src/screen_dxgi.rs` | Fast screen capture on Windows (desktop duplication, shrunk on the GPU) |
 | `src-tauri/src/audio.rs` | Audio capture, spectrum analysis, beat detection |
@@ -194,10 +232,11 @@ The backend is Rust ([Tauri](https://tauri.app)); rendering, capture and hardwar
 
 ## Status
 
-This is an early release (0.1). What has and has not been exercised so far:
+This is an early release (0.2). What has and has not been exercised so far:
 
 - Developed and tested on Windows 11. The code is cross-platform in principle, but Linux and macOS builds are untested.
 - The engine, layouts, effects, scripting, ambient sampling and all wire protocols are covered by automated tests, and the network protocols have been checked end to end against a local receiver.
+- Audio capture has been checked against live playback and the analysis against a synthetic song (steady response, tempo tracking, quiet versus loud); how it feels with your own music is best judged by ear and eye, so reports are welcome.
 - The serial path and the generated Arduino sketches have not yet been run against physical boards by the author. If something misbehaves on your hardware, please open an issue with the board and LED type.
 - RGBW (four-channel) LEDs are driven as RGB; there is no dedicated white channel yet.
 
