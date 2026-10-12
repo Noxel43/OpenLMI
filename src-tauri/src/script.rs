@@ -436,6 +436,32 @@ mod tests {
         }
     }
 
+    /// Every script shown in the README and the scripting guide must work.
+    #[test]
+    fn documented_scripts_run() {
+        let root = concat!(env!("CARGO_MANIFEST_DIR"), "/..");
+        let matrix = Arc::new(layout::build(&Layout::Matrix { width: 8, height: 8, wiring: MatrixWiring::default() }));
+        let mut found = 0;
+        for file in ["README.md", "docs/scripting.md"] {
+            let text = std::fs::read_to_string(format!("{root}/{file}")).expect("docs should exist");
+            for block in text.split("```rust").skip(1) {
+                let code = block.split("```").next().unwrap_or_default();
+                if !code.contains("fn pixel") && !code.contains("fn frame") {
+                    continue;
+                }
+                found += 1;
+                assert_eq!(check(code), Ok(()), "a script in {file} does not compile:
+{code}");
+                for map in [strip(30), matrix.clone()] {
+                    let (_, err) = render(code, map, 90);
+                    assert_eq!(err, None, "a script in {file} fails when run:
+{code}");
+                }
+            }
+        }
+        assert!(found >= 8, "expected to find the documented examples, found {found}");
+    }
+
     #[test]
     fn mistakes_are_reported_not_fatal() {
         assert!(check("fn pixel(i, t) { hsv(0, 1, 1 }").is_err(), "syntax error");

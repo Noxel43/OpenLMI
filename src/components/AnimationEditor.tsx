@@ -323,6 +323,8 @@ export function AnimationEditor({ device, layout, animation, onClose }: Props) {
       const Decoder = (window as any).ImageDecoder;
       if (file.type === "image/gif" && Decoder) {
         const decoder = new Decoder({ data: await file.arrayBuffer(), type: file.type });
+        // The frame count is only final once the whole file has been parsed.
+        await decoder.completed;
         await decoder.tracks.ready;
         const total = Math.min(decoder.tracks.selectedTrack.frameCount, 240);
         const imported: EditFrame[] = [];
